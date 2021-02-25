@@ -1,0 +1,285 @@
+properties([[$class: 'JiraProjectProperty', 
+siteName: 'http://jira/'], buildDiscarder(logRotator(artifactDaysToKeepStr: '', 
+artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '7')), disableConcurrentBuilds(), 
+[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false], 
+parameters([
+    booleanParam(defaultValue: false, description: 'Do backups DB and App?', name: 'DO'),
+    [$class: 'ChoiceParameter', choiceType: 'PT_SINGLE_SELECT', description: '', filterLength: 1, filterable: false, name: 'VER', randomName: 'choice-parameter-695033210053143',
+script: [$class: 'GroovyScript', fallbackScript: [classpath: [], sandbox: false, script: ''], script: [classpath: [], sandbox: false, script: '''def sout = new StringBuilder(), serr = new StringBuilder()
+def proc = \'ssh ts@distrib ls -t /var/www/distrib/rig_space/distrib\'.execute()
+proc.consumeProcessOutput(sout, serr)
+proc.waitForOrKill(1000)
+return sout.tokenize()''']]], 
+choice(choices: ['qa.rig.space', 'barcelona.rig.space', 'gbox-mini-000', 'ggr.rig.space', 'novatek_reporting', 'novatek_analytics', 'novatek_monitoring', 'novatek_rating', 'eugenia', 'irsim.rig.space', 'rigspace.gn.com.ru', 'rigspace.gn.com.ru/monitoring', 'rigspace.gn.com.ru_rig', 'demo.rig.space',' demo.rig.space/analytics'], description: '', name: 'TO')])])
+
+pipeline {
+   agent any
+
+   environment {
+        TMP_PATH = '/tmp/distrib.tmp'
+        DISTR_SSH = 'ts@distrib'
+        DISTR = '/var/www/distrib/rig_space/distrib'
+    }
+
+    stages {
+        stage('Init') {
+            steps {
+                script {
+                    if (params.TO == 'test') {
+                        user = 'nick'
+                        host = '192.168.0.99'
+                        toSSH = "${user}@${host}"
+                        homePath = '/tmp/zzz'
+                        projPath = 'rig_space'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        //MySQL = "mysqldump -h 127.0.0.1 -u root -pmantis mysql \\> ${backupPath}/rigspace.sql"
+                        MySQL = ""
+                        //projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'analytics':['frontend', 'lib'], 'equipment', 'reporting':['frontend', 'lib']]
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'analytics':['frontend', 'lib'], 'es_filler':['lib']]
+                    }
+                    if (params.TO == 'ggr.rig.space') {
+                        user = 'ggr'
+                        host = '192.168.0.8'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/ggr'
+                        projPath = 'rig_space_ggr'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 127.0.0.1 -P 33064 -u root -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib', 'validation_schemes', 'export_mapping', 'templates']]
+                    }
+                    if (params.TO == 'qa.rig.space') {
+                        user = 'qa'
+                        host = '192.168.0.8'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/qa'
+                        projPath = 'rig_space_qa'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 127.0.0.1 -P 33061 -u root -ptetraroot rigspace_prod \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'barcelona.rig.space') {
+                        user = 'prototype'
+                        host = '192.168.0.8'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/prototype'
+                        projPath = 'barcelona.rig.space'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 127.0.0.1 -P 33062 -u root -ptetraroot rigspace_novatek \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib', 'validation_schemes', 'export_mapping', 'templates']]
+                    }
+                    if (params.TO == 'gbox-mini-000') {
+                        user = 'ts'
+                        host = 'gbox-mini-000'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/ts'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 127.0.0.1 -P 3306 -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib', 'validation_schemes', 'export_mapping', 'templates']]
+                    }
+                    if (params.TO == 'novatek_reporting') {
+                        user = 'tetrasoft'
+                        host = '91.203.37.18'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib', 'validation_schemes', 'export_mapping', 'templates']]
+                    }
+                    if (params.TO == 'novatek_monitoring') {
+                        user = 'tetrasoft'
+                        host = '91.203.37.18'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['monitoring':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'novatek_rating') {
+                        user = 'tetrasoft'
+                        host = '91.203.37.17'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rig_space'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 91.203.37.18 -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['rating':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'novatek_analytics') {
+                        user = 'tetrasoft'
+                        host = '91.203.37.17'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rig_space'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -h 91.203.37.18 -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['analytics':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'eugenia') {
+                        user = 'ts'
+                        host = 'eugenia'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/ts'
+                        projPath = 'rigspace_demo'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u rigspace -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'analytics':['frontend', 'lib'], 'es_filler':['lib']]
+                    }
+                    if (params.TO == 'irsim.rig.space') {
+                        user = 'irsim'
+                        host = '192.168.0.4'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/irsim'
+                        projPath = 'irsim.rig.space'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -urigspace  -ptetraroot rigspace_irsim \\> ${backupPath}/rigspace_irsim.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'analytics':['frontend', 'lib'], 'es_filler':['lib']]
+                    }
+                    if (params.TO == 'rigspace.gn.com.ru') {
+                        user = 'tetrasoft'
+                        host = '178.72.74.119'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u report -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'rigspace.gn.com.ru/monitoring') {
+                        user = 'tetrasoft'
+                        host = '178.72.74.119'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u report -ptetraroot rigspace \\> ${backupPath}/rigspace.sql"
+                        projs = ['monitoring':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'rigspace.gn.com.ru_rig') {
+                        user = 'tetrasoft'
+                        host = '178.72.74.119'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/tetrasoft'
+                        projPath = 'rigspace_rig'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u report -ptetraroot rigspace_rig \\> ${backupPath}/rigspace_rig.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'demo.rig.space') {
+                        user = 'demo'
+                        host = '192.168.0.4'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/demo'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u rigspace -ptetraroot rigspace_demo \\> ${backupPath}/rigspace_demo.sql"
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib'], 'reporting':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'demo.rig.space/analytics') {
+                        user = 'demo'
+                        host = '192.168.0.4'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/demo'
+                        projPath = 'rigspace'
+                        data = sh(script:"ssh $toSSH date +%F_%T", returnStdout: true).trim()
+                        backupPath = "${homePath}/backup/${projPath}/${data}"
+                        MySQL = "mysqldump -u rigspace -ptetraroot rigspace_demo \\> ${backupPath}/rigspace_demo.sql"
+                        projs = ['analytics':['frontend', 'lib']]
+                    }
+                    if (params.TO == 'test.rig.space') {
+                        user = 'qa'
+                        host = '192.168.0.8'
+                        toSSH = "${user}@${host}"
+                        homePath = '/home/qa'
+                        projPath = 'rig_space_qaa/rigspace'
+                        projs = ['authentication':['frontend', 'lib'], 'admin':['frontend', 'lib']]
+                    }
+                }           
+            }
+        }
+      
+        stage('Make distrib') {
+            steps {
+                sh 'mkdir -vp $TMP_PATH'
+                sh 'rsync -aPvz --delete $DISTR_SSH:/$DISTR/$VER/ $TMP_PATH/'
+            }
+        }
+
+        stage('Check distrib') {
+            steps {
+                script{
+                    projs.each{proj->
+                        proj.value.each{fld->
+                            sh "ls $TMP_PATH/$proj.key/$fld"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Stop') {
+            steps {
+                script{
+                    projs.each{
+                        sh "ssh -tt $toSSH 'cd $homePath/$projPath/$it.key && ./${it.key}.sh -a stop'"
+                    }
+                }
+            }
+        }
+
+        stage('Backup APP') {
+            when {expression {params.DO}} 
+            steps {
+                sh "ssh $toSSH mkdir -vp $backupPath"
+                sh "ssh $toSSH cp -va $homePath/$projPath/* $backupPath"
+            }
+        }
+
+        stage('Backup DB') {
+            when {expression {params.DO}} 
+            steps {
+                sh "ssh $toSSH $MySQL"
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script{
+                    projs.each{proj->
+                        proj.value.each{fld->
+                            sh "rsync -aPvz --delete $TMP_PATH/$proj.key/$fld $toSSH:/$homePath/$projPath/$proj.key/"
+                        }
+                    }
+                    sleep(time:10,unit:"SECONDS")
+                }
+            }
+        }
+
+        stage('Start') {
+            steps {
+                script {
+                    projs.each {
+                        sh "ssh -tt $toSSH 'cd $homePath/$projPath/$it.key && ./${it.key}.sh -a start'"
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,115 @@
+#!groovy
+
+@Library('tetrasoft') _
+
+properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false],
+    parameters([
+            [$class: 'CascadeChoiceParameter', choiceType: 'PT_SINGLE_SELECT',
+            name: 'VERSION',
+            description: 'Release version',
+            referencedParameters: '',
+            filterLength: 1, filterable: false, randomName: 'choice-parameter-415678720404050',
+            script: [$class: 'GroovyScript', fallbackScript: [classpath: [], sandbox: false, script: ''],
+                script: [classpath: [], sandbox: false,
+                    script: '''
+                        import org.thoughtslive.jenkins.plugins.jira.service.JiraService;
+                        import org.thoughtslive.jenkins.plugins.jira.Site;
+                        import hudson.model.*
+
+                        final Site config = new Site("JIRA_SERVER", new URL("http://jira/"), "BASIC", 10000);
+                        config.setUserName('d.protopopov')
+                        config.setPassword('dp752tetra375');
+                        def service = new JiraService(config);
+                        def versions = service.getProjectVersions('RIGSPACE')
+
+                        //sorting versions from jira to jenkins parameters
+
+                        def versionArraySort = { a1, a2 ->
+                            def headCompare = a1[0] <=> a2[0]
+                            if (a1.size() == 1 || a2.size() == 1 || headCompare != 0) {
+                                return headCompare
+                            } else {
+                                return recurse(a1[1..-1], a2[1..-1])
+                            }
+                        }
+                        recurse = versionArraySort
+                        def versionStringSort = { s1, s2 ->
+                            def nums = { it.tokenize('.').collect{ it.toInteger() } }
+                            versionArraySort(nums(s1), nums(s2))
+                        }
+                        return versions.data.findAll{it.released == true}.name.sort(versionStringSort).reverse()[0..15]
+                    ''']]],
+
+                    booleanParam(defaultValue: false, description: 'Релиз RS Rerpoting', name: 'REPORTING'),
+                    booleanParam(defaultValue: false, description: 'Релиз RS Analytics', name: 'ANALYTICS'),
+                    booleanParam(defaultValue: false, description: 'Релиз RS Rating', name: 'RATING'),
+                    booleanParam(defaultValue: false, description: 'Релиз RS Monitoring', name: 'MONITORING'),
+                    text(defaultValue: '', description: 'Предлагаемые новости релиза / готовность к деплою на продакшен', name: 'NEWS')
+        ])
+])
+
+pipeline {
+    environment {
+        TAG = "$VERSION"
+        RELEASE_BRANCH = git.getReleaseBranchName("$VERSION")
+        PROJECT_NAME = "rig_space"
+        PROJECT_KEY = "RIGSPACE"
+        CURRENT_MODULE_NAME = ""
+    }
+
+    agent any
+
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '7'))
+        disableConcurrentBuilds()
+    }
+
+    stages { 
+        stage ('Get Module Name') {
+            steps {
+                script {
+                    if (params.REPORTING) {
+                        CURRENT_MODULE_NAME = "Reporting"
+                    }    
+
+                    if (params.ANALYTICS) {
+                        CURRENT_MODULE_NAME = "Analytics"
+                    }
+
+                    if (params.RATING) {
+                        CURRENT_MODULE_NAME = "Rating"
+                    }
+
+                    if (params.MONITORING) {
+                        CURRENT_MODULE_NAME = "Monitoring"
+                    }
+                }
+            } 
+        }
+    
+        stage ('Print what module are needed') {
+            steps {
+                echo "Reporting or Analytics or Rating or Monitoring?"
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                emailext to: 'dev@tetra-soft.ru, support@tetra-soft.ru',
+                subject: "[RELEASE] Rigspace ${CURRENT_MODULE_NAME} ${VERSION}",
+                body: """<img src=\"https://github.com/HappyQA/happyqa.github.io/blob/master/rigspace_logo.jpg?raw=true\"><br><br>
+                        <b>Дистрибутив</b><br>
+                        <a href=\"http://distrib/rig_space/distrib/$VERSION/\">http://http://distrib/rig_space/distrib/$VERSION/</a><br><br>
+                        <b>Release Version: ${VERSION}</b><br><br>
+                        <b>Предлагаемые новости:</b><br>
+                        <pre>$NEWS</pre><br>
+                        <b>Этот дистрибутив прошел тестирование в отделе QA и может быть установлен.</b>""",
+                mimeType: 'text/html',
+                replyTo: 'dev@tetra-soft.ru'
+            }
+        }
+    }
+}

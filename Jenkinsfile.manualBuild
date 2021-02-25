@@ -1,0 +1,399 @@
+#!groovy
+/* groovylint-disable LineLength */
+/**
+Функции Pipeline для сборки Release Candidate:
+Вводная информация:
+def == функция, импортируемая из библиотеки jenkins.groovy:
+
+def buildFrontendApplication = сборка + прогон фронтенд тестов и подготовка source в директории /rig_space_app/frontend;
+def buildBackendApplication = сборка/компиляция + прогон бэкенд тестов с перемещением папки frontend в дирректорию /target/distrib/;
+def getValidationSchemas = копирование валидационных схем в дистрибутив /target/distrib/;
+def getExportMapping = копирование маппинга настроек схем в директорию /target/distib/;
+def getTemplates = копирование актуальной документации по шаблонам .jasper Reporting модуля по подготовке отчетов;
+def writeMD5SUMMfiles = формирование чек-сумм файлов для корректного сравнения файлов из дистрибутива до последующего обновления дистрибутива на продакшен;
+def cleanApplication = отчистка файлов фронтенда, такие как node_modules и package-lock.json;
+def deployAllApplications = функция деплоя выбранных по параметрам/настройкам создания дистрбутива;
+def publishAllApplications = функция доставки собранного дистрибутива по пути /distrib/rig_space/distrib/
+*/
+/**
+Groovy Lang
+*/
+@Library('tetrasoft') _
+/**
+Библиотеки extends из репозитария ssh://git@bitbucket:7999/dev/jenkins_shared_lib.git
+*/
+/**
+Init скрипта, объявление того, что вы видите при нажатии на кнопку "Собрать с параметрами"
+*/
+properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false],
+    parameters([
+        [$class: 'CascadeChoiceParameter', choiceType: 'PT_SINGLE_SELECT',
+        name: 'VERSION',
+        description: 'Release version',
+        referencedParameters: '',
+        filterLength: 1, filterable: false, randomName: 'choice-parameter-415678720404050',
+        script: [$class: 'GroovyScript', fallbackScript: [classpath: [], sandbox: false, script: ''],
+            script: [classpath: [], sandbox: false,
+                script: '''
+                    import org.thoughtslive.jenkins.plugins.jira.service.JiraService;
+                    import org.thoughtslive.jenkins.plugins.jira.Site;
+                    import hudson.model.*
+
+                    final Site config = new Site("JIRA_SERVER", new URL("http://jira/"), "BASIC", 10000);
+                    config.setUserName('a.stupin')
+                    config.setPassword('12345678');
+                    def service = new JiraService(config);
+                    def versions = service.getProjectVersions('RIGSPACE')
+
+                    //sorting versions from jira to jenkins parameters
+
+                    def versionArraySort = { a1, a2 ->
+                        def headCompare = a1[0] <=> a2[0]
+                        if (a1.size() == 1 || a2.size() == 1 || headCompare != 0) {
+                            return headCompare
+                        } else {
+                            return recurse(a1[1..-1], a2[1..-1])
+                        }
+                    }
+                    recurse = versionArraySort
+                    def versionStringSort = { s1, s2 ->
+                        def nums = { it.tokenize('.').collect{ it.toInteger() } }
+                        versionArraySort(nums(s1), nums(s2))
+                    }
+                    return versions.data.findAll{it.released == false}.name.sort(versionStringSort)
+                ''']]],
+        /**
+        Чекбоксы парметров в скрипте и в Init сборке в настройках
+        */
+        /* groovylint-disable-next-line LineLength */
+        booleanParam(defaultValue: false, description: 'true - собирается из тега; false - собирается из dev с созданием релизной ветки. Формат тега: "$VERSION. Пример: 0.20.0"', name: 'USE_TAG'),
+        booleanParam(defaultValue: true, description: 'Send to distrib/?', name: 'DISTRIB'),
+        booleanParam(defaultValue: false, description: 'Cleaning workspace folder', name: 'CLEAN_WS'),
+        booleanParam(defaultValue: false, description: 'Cleaning package-lock.json and nodejs folders', name: 'CLEAN_FE'),
+        booleanParam(defaultValue: false, description: 'Do mvn clean', name: 'CLEAN_BE'),
+        booleanParam(defaultValue: false, description: 'Build RS Reporting', name: 'REPORTING'),
+        booleanParam(defaultValue: false, description: 'Build RS Analytics', name: 'ANALYTICS'),
+        booleanParam(defaultValue: false, description: 'Build RS Equipment', name: 'EQUIPMENT'),
+        booleanParam(defaultValue: false, description: 'Build RS Rating', name: 'RATING'),
+        booleanParam(defaultValue: false, description: 'Build RS Monitoring', name: 'MONITORING'),
+        booleanParam(defaultValue: true, description: 'Deploy applications?', name: 'DEPLOY'),
+        text(defaultValue: '', description: 'Special notes to support / tester', name: 'SPECIAL_NOTES')
+    ])
+])
+/**
+Исполняемый Pipeline
+*/
+pipeline {
+    /**
+    Обяъвление env на уровне глобальных переменных job'ы
+    */
+    environment {
+        TAG = "$VERSION"
+        TARGET = "/target/distrib/"
+        RELEASE_BRANCH = git.getReleaseBranchName("$VERSION")
+        PROJECT_NAME = "rig_space"
+        PROJECT_KEY = "RIGSPACE"
+        CURRENT_MODULE_NAME = ""
+        CURRENT_STAGE_NAME = ""
+    }
+    agent any
+    /**
+    Обявлениие глобальных инструментов из http://jenkins/configureTools/
+    */
+    tools {
+        maven 'Maven3.6.0'
+        nodejs 'NodeJS 10'
+        jdk 'java11'
+        nodejs 'nodejs-jest'
+    }
+    /**
+    Опции:
+    buildDiscarder - "Удалять устаревшие сборки" - 7 - Колво сколько дней хранить логи сборок
+    disableConcurrentBuilds - Чтобы сборки не были конкурирующими, а выполнялись последовательно
+    */
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '7'))
+        disableConcurrentBuilds()
+    }
+    stages {
+        /**
+        Стейдж для очистки WS в Jenkins
+        */
+        stage ('Clean workspace') {
+            when {expression {params.CLEAN_WS}}
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    cleanWs()
+                }
+            }
+        }
+        /*
+        Первый стейдж VCS, функция которая настраиивает билд согласно указанным требованиям сборки
+        Либо создает новый бранч если собираете из DEV либо создает +1 инкеремент если собирается из сущестующей ($RELEASE_BRANCH) +1 TAG
+        */
+        stage ('VCS') {
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    sh "git fetch --prune"
+                    if (params.USE_TAG) {
+                        echo "Checkout to the git tag '$TAG'"
+                        sh "git checkout $TAG"
+                    } else {
+                        if(git.isFixBuild("$VERSION")) {
+                            echo "Checkout to release branch '$RELEASE_BRANCH'"
+                            sh "git checkout $RELEASE_BRANCH"
+                            sh "git pull"
+                            sh "git pull --tags"
+                        } else {
+                            echo "Creating branch '$RELEASE_BRANCH'"
+                            sh "git branch -d $RELEASE_BRANCH | true"
+                            sh "git checkout -b $RELEASE_BRANCH"
+                            sh "git push --set-upstream origin $RELEASE_BRANCH"
+                        }
+                        echo "create tag '$VERSION'"
+                        sh "git tag -f $TAG -m 'tag has been set a jenkins'"
+                        sh "git push --tags -f origin"
+                    }
+                }
+                echo "clone validation schemes"
+                dir('rigspace_customization') {
+                    sh "git pull"
+                }
+            }
+        }
+        /**
+        Стэйдж для очистки ключевых фолдеров Frontend дирректорий, юзайте в крайних случаях, иногда поможет
+        */
+        stage ('Clean Frontend') {
+            when {expression {params.CLEAN_FE}}
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    jenkins.cleanApplication()
+                }
+            }
+        }
+        /**
+        Выполнение команды mvn clean - отчистка сгенерируемых файлов из maven конфигуратора проекта - http://maven.apache.org/
+        */
+        stage ('Clean Backend') {
+            when {expression {params.CLEAN_BE}}
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    sh "mvn clean"
+                }
+            }
+        }
+        /**
+        Подкотовка к сборке фронтенда "https://nx.dev/latest/angular/guides/ci/monorepo-ci-jenkins"
+        */
+        stage ('Prepare Frontend') {
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    dir("angular/") {
+                        sh "npm i"
+                    }
+                }
+            }
+        }
+        /**
+        Сборка root Frontend > /rig_space/angular/
+        При параметризированной сборки фронта происходит доставка нужных дирректорий в папку {имя_модуля}/frontend/ для последующего перемещения в  distrib из maven
+        */
+        stage ('Build Frontend Rigspace modules') {
+            steps {
+                echo 'Choosed modules from Frontend are building...'
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    CURRENT_MODULE_NAME = "Authentication"
+                    jenkins.buildFronetndApplication("authentication")
+                    CURRENT_MODULE_NAME = "Admin"
+                    jenkins.buildFronetndApplication("admin")
+
+                    if (params.REPORTING) {
+                        CURRENT_MODULE_NAME = "Reporting"
+                        jenkins.buildFronetndApplication("reporting")
+                    }
+                    if (params.ANALYTICS) {
+                        CURRENT_MODULE_NAME = "Analytics"
+                        jenkins.buildFronetndApplication("analytics")
+                    }
+                    if (params.EQUIPMENT) {
+                        CURRENT_MODULE_NAME = "Equipment"
+                        jenkins.buildFronetndApplication("equipment")
+                    }
+                    if (params.RATING) {
+                        CURRENT_MODULE_NAME = "Rating"
+                        jenkins.buildFronetndApplication("rating")
+                    }
+                    if (params.MONITORING) {
+                        CURRENT_MODULE_NAME = "Monitoring"
+                        jenkins.buildFronetndApplication("monitoring")
+                    }
+                }
+            }
+        }
+        /**
+        Аналогичная предыдущему пункту сборка Backend с имплементированиием функций которые описаны выше
+        */
+        stage ('Build Backend Rigspace modules') {
+            steps {
+                echo 'Choosed modules from Backend are building...'
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    CURRENT_MODULE_NAME = "Authentication"
+                    jenkins.buildBackendApplication("authentication")
+                    jenkins.writeMD5SUMMfiles("authentication")
+
+                    CURRENT_MODULE_NAME = "Admin"
+                    jenkins.buildBackendApplication("admin")
+                    jenkins.writeMD5SUMMfiles("admin")
+
+                    if (params.REPORTING) {
+                        CURRENT_MODULE_NAME = "Reporting"
+                        jenkins.buildBackendApplication("reporting")
+                        jenkins.getValidationSchemas("reporting")
+                        jenkins.getExportMapping("reporting")
+                        jenkins.getTemplates("reporting")
+                        jenkins.writeMD5SUMMfiles("reporting")
+                    }
+                    if (params.ANALYTICS) {
+                        CURRENT_MODULE_NAME = "Analytics"
+                        jenkins.buildBackendApplication("analytics")
+                        jenkins.writeMD5SUMMfiles("analytics")
+                    }
+                    if (params.EQUIPMENT) {
+                        CURRENT_MODULE_NAME = "Equipment"
+                        jenkins.buildBackendApplication("equipment")
+                        jenkins.writeMD5SUMMfiles("equipment")
+                    }
+                    if (params.RATING) {
+                        CURRENT_MODULE_NAME = "Rating"
+                        jenkins.buildBackendApplication("rating")
+                        jenkins.writeMD5SUMMfiles("rating")
+                    }
+                    if (params.MONITORING) {
+                        CURRENT_MODULE_NAME = "Monitoring"
+                        jenkins.buildBackendApplication("monitoring")
+                        jenkins.writeMD5SUMMfiles("monitoring")
+                    }
+                }
+            }
+            post {
+                always {
+                    junit '*/target/surefire-reports/*xml'
+                }
+            }
+        }
+        /**
+        Данный степ сделан для реализации сборки/отправки содержимого папки target/ где находятся frontend/backend/addtitional фолдеры для формирования дистрибутива
+        */
+        stage ('Publish distrib to www') {
+            when {expression {params.DISTRIB}}
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    parallel (
+                        rig_space_authentication: {
+                            jenkins.publishApplication("authentication")
+                        },
+                        rig_space_admin: {
+                            jenkins.publishApplication("admin")
+                        },
+                        rig_space_reporting: {
+                        if (params.REPORTING) {
+                                jenkins.publishApplication("reporting")
+                            }
+                        },
+                        rig_space_analytics: {
+                            if (params.ANALYTICS) {
+                                jenkins.publishApplication("analytics")
+                            }
+                        },
+                        rig_space_equipment: {
+                            if (params.EQUIPMENT) {
+                                jenkins.publishApplication("equipment")
+                            }
+                        },
+                        rig_space_rating: {
+                            if (params.RATING) {
+                                jenkins.publishApplication("rating")
+                            }
+                        },
+                        rig_space_monitoring: {
+                            if (params.MONITORING) {
+                                jenkins.publishApplication("monitoring")
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        /**
+        Здесь происходит деплой на рабочие инстансы наших площадок уже ранее собранных продуктов
+        */
+        stage ('Deploy on instance') {
+            when {expression {params.DEPLOY}}
+            steps {
+                script {
+                    CURRENT_STAGE_NAME = "${env.STAGE_NAME}"
+                    echo 'Delivery distrib on optional Environment'
+                    if (params.MONITORING) {
+                        echo 'Deploy on 192.168.6.3/monitoring'
+                        jenkins.deployAllApplications("rig_space_qa", "monitoring")
+                    } else {
+                        if (params.RATING) {
+                            echo 'Deploy on 192.168.0.28/rating'
+                            jenkins.deployAllApplications("rig_space_qa", "rating")
+                        } else {
+                            echo 'Deploy on 192.168.0.8/rig_space_qa'
+                            jenkins.deployAllApplications("rig_space_qa", "production8_qa")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /**
+    Post stage - стейдж для отправки Email / Slack нотификаций о результативности сборки
+    */
+    post {
+        success {
+            script {
+                def issuesHtmlList = jira.getIssuesHtmlList("$PROJECT_KEY", "$VERSION")
+                def versionDescription = jira.getVersionDescription("$PROJECT_KEY", "$VERSION")
+                emailext to: 'dev@tetra-soft.ru',
+                    subject: "[TESTING] ${CURRENT_MODULE_NAME} ${VERSION}",
+                    body: """<img src=\"https://github.com/HappyQA/happyqa.github.io/blob/master/rigspace_logo.jpg?raw=true\"><br><br>
+                            <b>Дистрибутив</b><br>
+                            <a href=\"http://distrib/rig_space/distrib/$VERSION/\">http://distrib/rig_space/distrib/$VERSION/</a><br><br>
+                            <b>Описание релиза</b><br>
+                            $versionDescription<br><br>
+                            <b>Changelog</b><br>
+                            $issuesHtmlList<br><br>
+                            $SPECIAL_NOTES<br><br>""",
+                    mimeType: 'text/html',
+                    replyTo: 'dev@tetra-soft.ru'
+
+                jira.releaseVersion("$PROJECT_KEY", "$VERSION")
+            }
+        }
+        failure {
+            emailext to: 'a.stupin@tetra-soft.ru',
+            subject: "[TESTING] ${CURRENT_MODULE_NAME} ${VERSION}. Build ${currentBuild.fullDisplayName} failed",
+            body: "Релизная сборка ${currentBuild.fullDisplayName} не прошла. <br> ${BUILD_URL} - смотрите логи",
+            mimeType: 'text/html',
+            replyTo: 'a.stupin@tetra-soft.ru'
+        }
+        always {
+            /* Use slackNotifier.groovy from shared library and provide current build result as parameter */
+            script {
+                slackNotifier.sendRC(currentBuild.currentResult, "Rigspace", "rigspace")
+            }
+        }
+    }
+}

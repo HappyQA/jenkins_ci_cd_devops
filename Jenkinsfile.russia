@@ -1,0 +1,103 @@
+#!groovy
+
+@Library('tetrasoft') _
+
+properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false]])
+
+pipeline {
+    
+    agent any
+
+    tools {
+        maven 'Maven3.6.0'
+        nodejs 'NodeJS 10'
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+
+        stage ('Mvn clean') {
+            steps {
+                script {
+                    sh "mvn clean"
+                }                            
+            }
+        }
+
+        stage ('Build') {
+            steps {
+                script {
+                    buildStage("authentication")
+                    buildStage("admin")
+                    buildStage("reporting")
+                }
+            }
+        }
+
+        stage ('Deploy') {
+            steps {
+                script {
+                    deployAllApplications("russia.rig.space")
+                }
+            }
+        }
+    }
+}
+
+def buildStage (String app) {
+    dir('angular/') {
+        sh "npm i"
+        sh "npx nx run-many --target=build --projects=${app} --parallel=true --maxParallel=3 --prod"
+    }  
+    sh "mvn clean package -pl rig_space_$app -am -P production"
+}
+
+def deployAllApplications(String path_to) {
+    echo "Deploy all applications"
+    deployApplication("authentication", "$path_to")
+    deployApplication("admin", "$path_to")
+    deployApplication("reporting", "$path_to")
+}
+
+def deployApplication(String app, String path_to) {
+    echo "Deploy $app"
+    sshPublisher(publishers: [sshPublisherDesc(
+                            configName: 'prototype',
+                            transfers: [
+                                // remove previous build
+                                sshTransfer(
+                                    excludes: '',
+                                    execCommand: "rm -r --force ~/$path_to/$app/{frontend,lib}",
+                                    execTimeout: 120000,
+                                    flatten: false,
+                                    makeEmptyDirs: false,
+                                    noDefaultExcludes: false,
+                                    patternSeparator: '[, ]+',
+                                    remoteDirectory: '',
+                                    remoteDirectorySDF: false,
+                                    removePrefix: '',
+                                    sourceFiles: ''
+                                ),
+                                // app distrib
+                                sshTransfer(
+                                    excludes: "rig_space_$app/target/distrib/resources/,rig_space_$app/target/distrib/${app}.sh",
+                                    execCommand: "chmod +x ~/$path_to/$app/${app}.sh && ~/$path_to/$app/${app}.sh -a restart",
+                                    execTimeout: 120000,
+                                    flatten: false,
+                                    makeEmptyDirs: false,
+                                    noDefaultExcludes: false,
+                                    patternSeparator: '[, ]+',
+                                    remoteDirectory: "$path_to/$app",
+                                    remoteDirectorySDF: false,
+                                    removePrefix: "rig_space_$app/target/distrib/",
+                                    sourceFiles: "rig_space_$app/target/distrib/",
+                                    usePty: true
+                                )],
+                                usePromotionTimestamp: false,
+                                useWorkspaceInPromotion: false,
+                                verbose: false)])
+}
