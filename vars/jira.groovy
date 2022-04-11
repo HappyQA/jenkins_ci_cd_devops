@@ -60,14 +60,13 @@ def getIssuesSlackList(String projectKey, String version) {
     return resultSlack
 }
 
+ def setNewVersion = jira.CreateNewVersion("$VERSION","$DESCRIPTION")
 
-// def setNewVersion = jira.CreateNewVersion("$VERSION","$DESCRIPTION")
-
-// def CreateNewVersion (String version, String description) {
-//     def newVersion = [ name: "$version",
-//                     archived: false,
-//                     released: false,
-//                     description: "$description",
-//                     project: 'RIG_SPACE' ]
-//     jiraNewVersion version: newVersion, site: 'JIRA_SITE'
-// }
+ def CreateNewVersion (String version, String description) {
+     def newVersion = [ name: "$version",
+                     archived: false,
+                     released: false,
+                     description: "$description",
+                     project: 'RIG_SPACE' ]
+     jiraNewVersion version: newVersion, site: 'JIRA_SITE'
+ }

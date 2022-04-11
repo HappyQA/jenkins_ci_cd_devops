@@ -1,6 +1,5 @@
 #!groovy
-
-@Library('tetrasoft') _
+@Library('') _
 
 properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false],
     parameters([
@@ -17,8 +16,8 @@ properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: fal
                         import hudson.model.*
 
                         final Site config = new Site("JIRA_SERVER", new URL("http://jira/"), "BASIC", 10000);
-                        config.setUserName('d.protopopov')
-                        config.setPassword('dp752tetra375');
+                        config.setUserName('')
+                        config.setPassword('');
                         def service = new JiraService(config);
                         def versions = service.getProjectVersions('RIGSPACE')
 
@@ -71,16 +70,13 @@ pipeline {
                 script {
                     if (params.REPORTING) {
                         CURRENT_MODULE_NAME = "Reporting"
-                    }    
-
+                    }
                     if (params.ANALYTICS) {
                         CURRENT_MODULE_NAME = "Analytics"
                     }
-
                     if (params.RATING) {
                         CURRENT_MODULE_NAME = "Rating"
                     }
-
                     if (params.MONITORING) {
                         CURRENT_MODULE_NAME = "Monitoring"
                     }
@@ -98,9 +94,9 @@ pipeline {
     post {
         always {
             script {
-                emailext to: 'dev@tetra-soft.ru, support@tetra-soft.ru',
+                emailext to: '',
                 subject: "[RELEASE] Rigspace ${CURRENT_MODULE_NAME} ${VERSION}",
-                body: """<img src=\"https://github.com/HappyQA/happyqa.github.io/blob/master/rigspace_logo.jpg?raw=true\"><br><br>
+                body: """<img src=""><br><br>
                         <b>Дистрибутив</b><br>
                         <a href=\"http://distrib/rig_space/distrib/$VERSION/\">http://http://distrib/rig_space/distrib/$VERSION/</a><br><br>
                         <b>Release Version: ${VERSION}</b><br><br>
@@ -108,7 +104,7 @@ pipeline {
                         <pre>$NEWS</pre><br>
                         <b>Этот дистрибутив прошел тестирование в отделе QA и может быть установлен.</b>""",
                 mimeType: 'text/html',
-                replyTo: 'dev@tetra-soft.ru'
+                replyTo: ''
             }
         }
     }

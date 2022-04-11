@@ -18,9 +18,9 @@ def publishAllApplications = функция доставки собранног�
 /**
 Groovy Lang
 */
-@Library('tetrasoft') _
+@Library('') _
 /**
-Библиотеки extends из репозитария ssh://git@bitbucket:7999/dev/jenkins_shared_lib.git
+Библиотеки extends из репозитария ssh://url.git
 */
 /**
 Init скрипта, объявление того, что вы видите при нажатии на кнопку "Собрать с параметрами"
@@ -40,8 +40,8 @@ properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: fal
                     import hudson.model.*
 
                     final Site config = new Site("JIRA_SERVER", new URL("http://jira/"), "BASIC", 10000);
-                    config.setUserName('a.stupin')
-                    config.setPassword('12345678');
+                    config.setUserName('')
+                    config.setPassword('');
                     def service = new JiraService(config);
                     def versions = service.getProjectVersions('RIGSPACE')
 
@@ -128,7 +128,7 @@ pipeline {
                 }
             }
         }
-        /*
+        /**
         Первый стейдж VCS, функция которая настраиивает билд согласно указанным требованиям сборки
         Либо создает новый бранч если собираете из DEV либо создает +1 инкеремент если собирается из сущестующей ($RELEASE_BRANCH) +1 TAG
         */
@@ -366,9 +366,9 @@ pipeline {
             script {
                 def issuesHtmlList = jira.getIssuesHtmlList("$PROJECT_KEY", "$VERSION")
                 def versionDescription = jira.getVersionDescription("$PROJECT_KEY", "$VERSION")
-                emailext to: 'dev@tetra-soft.ru',
+                emailext to: '',
                     subject: "[TESTING] ${CURRENT_MODULE_NAME} ${VERSION}",
-                    body: """<img src=\"https://github.com/HappyQA/happyqa.github.io/blob/master/rigspace_logo.jpg?raw=true\"><br><br>
+                    body: """<img src=""><br><br>
                             <b>Дистрибутив</b><br>
                             <a href=\"http://distrib/rig_space/distrib/$VERSION/\">http://distrib/rig_space/distrib/$VERSION/</a><br><br>
                             <b>Описание релиза</b><br>
@@ -377,17 +377,17 @@ pipeline {
                             $issuesHtmlList<br><br>
                             $SPECIAL_NOTES<br><br>""",
                     mimeType: 'text/html',
-                    replyTo: 'dev@tetra-soft.ru'
+                    replyTo: ''
 
                 jira.releaseVersion("$PROJECT_KEY", "$VERSION")
             }
         }
         failure {
-            emailext to: 'a.stupin@tetra-soft.ru',
+            emailext to: '',
             subject: "[TESTING] ${CURRENT_MODULE_NAME} ${VERSION}. Build ${currentBuild.fullDisplayName} failed",
             body: "Релизная сборка ${currentBuild.fullDisplayName} не прошла. <br> ${BUILD_URL} - смотрите логи",
             mimeType: 'text/html',
-            replyTo: 'a.stupin@tetra-soft.ru'
+            replyTo: ''
         }
         always {
             /* Use slackNotifier.groovy from shared library and provide current build result as parameter */

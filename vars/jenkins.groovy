@@ -61,9 +61,9 @@ def deployAllApplications (String path_to, String environment) {
     deployApplication("authentication", "$path_to", "$environment")
     deployApplication("admin", "$path_to", "$environment")
     
-    // if (params.ANALYTICS) { 
-	// 	deployApplication("analytics", "$path_to", "$environment")
-    // }
+     if (params.ANALYTICS) {
+	 	deployApplication("analytics", "$path_to", "$environment")
+     }
     if (params.REPORTING) {
         deployApplication("reporting", "$path_to", "$environment")
     }
@@ -139,7 +139,7 @@ def publishAllApplications (String app) {
 }
 
 def publishApplication (String app) {
-    // remove previous build for choosen version
+    // remove previous build for chosen version
     echo "Send distrib $app"
         sshPublisher(publishers: [sshPublisherDesc(
                 configName: 'distrib',

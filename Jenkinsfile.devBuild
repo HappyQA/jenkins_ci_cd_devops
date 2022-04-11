@@ -1,7 +1,5 @@
 #!groovy
-
-
-@Library('tetrasoft') _
+@Library('') _
 
 properties([[$class: 'RebuildSettings', autoRebuild: false, rebuildDisabled: false],
     parameters([
@@ -87,7 +85,6 @@ pipeline {
                 }                      
             }  
         }
-        
 
         stage ('Clean Backend (Do mvn clean)') {
             steps {
@@ -145,7 +142,7 @@ pipeline {
 
     post {
         failure {
-                 /* Send email notification to dev@tetra-soft.ru */
+                 /* Send email notification to email */
                 /* Use slackNotifier.groovy from shared library and provide current build result as parameter */
             script {
                 sendEmailToDev()
@@ -243,21 +240,21 @@ def packageApplicationAPI(String app) {
 
 def sendEmailToDev () {
     def changeLog = changeLogs()
-        emailext to: 'dev@tetra-soft.ru',
+        emailext to: '',
         attachLog: true,
         compressLog: false,
         subject: "[DEV] Stage ${CURRENT_STAGE_NAME} are failed - Сборка ${BUILD_NUMBER}",
         body: """
-            <img src=\"https://github.com/HappyQA/happyqa.github.io/blob/master/rigspace_logo.jpg?raw=true\"><br><br>
+            <img src=""><br><br>
             <br><b>Результат сборки:</b><br>
             <br>Номер сборки: <b>${BUILD_NUMBER}</b>
             <br>Статус сборки: <b>${currentBuild.result}</b>
             <br>Коммиты при которых сборка упала:
             $changeLog
-            <br><b><a href=\"http://192.168.0.13/job/dev.rig.space/${BUILD_NUMBER}/console\">Просмотреть отчет по сборке</a></b>
+            <br><b><a href="">Просмотреть отчет по сборке</a></b>
             """,
         mimeType: 'text/html',
-        replyTo: 'a.stupin@tetra-soft.ru'
+        replyTo: ''
 }
 
 def prevBuildLastCommitId() {
@@ -277,7 +274,7 @@ def commitInfo(commit) {
 
 def changeLogs() {
     String msg = ""
-    String repoUrl = 'http://bitbucket/projects/RS/repos/rig_space/'
+    String repoUrl = 'bitbucket url'
     def lastId = null
     def prevId = prevBuildLastCommitId()
     def changeLogSets = currentBuild.changeSets
